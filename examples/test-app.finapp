@@ -1,0 +1,36 @@
+// Test app with minimal structure
+
+app TestApp {
+    name: "Test Application"
+    id: "com.example.test"
+    version: "0.1.0"
+    platforms: [ios, web]
+}
+
+// Test model
+model TestModel {
+    id: string required
+    name: string
+}
+
+// Test screen
+screen TestScreen {
+    title: "Test Screen"
+}
+
+// Navigation
+navigation {
+    type: tabs
+    items: [
+        {
+            id: "home"
+            title: "Home"
+            screen: TestScreen
+        }
+    ]
+}
+
+// API
+api {
+    baseUrl: "https://api.example.com"
+} 

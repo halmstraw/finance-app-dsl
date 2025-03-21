@@ -1,0 +1,322 @@
+// banking-app.finapp - Example DSL file for a banking application
+
+app BankingApp {
+    name: "Modern Banking App"
+    id: "com.example.bankingapp"
+    version: "1.0.0"
+    platforms: [web, ios, android]
+    theme: {
+        primaryColor: "#2E7D32"
+        secondaryColor: "#4CAF50"
+        backgroundColor: "#F5F5F5"
+        textColor: "#212121"
+    }
+}
+
+// Data models
+model User {
+    id: string required
+    username: string required
+    email: string required
+    firstName: string required
+    lastName: string required
+    phoneNumber: string
+    createdAt: date required
+    lastLogin: date
+    isActive: boolean default: true
+}
+
+model BankAccount {
+    id: string required
+    userId: string required
+    accountNumber: string required
+    accountType: string required enum: [checking, savings, investment]
+    balance: decimal required default: 0
+    currency: string required default: "USD"
+    openedDate: date required
+    isActive: boolean default: true
+}
+
+model Transaction {
+    id: string required
+    accountId: string required
+    amount: decimal required
+    type: string required enum: [deposit, withdrawal, transfer]
+    description: string
+    date: date required
+    category: string
+    reference: string
+}
+
+// Screens
+screen LoginScreen {
+    title: "Login"
+    initial
+
+    layout: {
+        type: stack
+        components: [
+            {
+                type: header
+                title: "Welcome to Banking App"
+            },
+            {
+                type: form
+                fields: [
+                    {
+                        type: text
+                        name: username
+                        label: "Username"
+                        required: true
+                    },
+                    {
+                        type: password
+                        name: password
+                        label: "Password"
+                        required: true
+                    }
+                ]
+                submitButton: "Login"
+                actions: {
+                    onSubmit: {
+                        api: login
+                        navigate: Dashboard
+                    }
+                }
+            },
+            {
+                type: link
+                text: "Forgot Password?"
+                actions: {
+                    onTap: {
+                        navigate: ForgotPassword
+                    }
+                }
+            }
+        ]
+    }
+}
+
+screen Dashboard {
+    title: "Dashboard"
+    
+    layout: {
+        type: stack
+        components: [
+            {
+                type: header
+                title: "Your Banking Dashboard"
+            },
+            {
+                type: accountSummary
+                data: accounts
+                properties: {
+                    showBalance: true,
+                    showAccountType: true
+                }
+            },
+            {
+                type: recentTransactions
+                data: transactions
+                limit: 5
+                actions: {
+                    onTap: {
+                        navigate: TransactionDetail
+                        params: {
+                            transactionId: "item.id"
+                        }
+                    }
+                }
+            },
+            {
+                type: quickActions
+                actions: [
+                    {
+                        label: "Send Money"
+                        icon: "send"
+                        onTap: {
+                            navigate: SendMoney
+                        }
+                    },
+                    {
+                        label: "Pay Bills"
+                        icon: "payment"
+                        onTap: {
+                            navigate: PayBills
+                        }
+                    },
+                    {
+                        label: "Deposit"
+                        icon: "add"
+                        onTap: {
+                            navigate: Deposit
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+}
+
+screen AccountDetail {
+    title: "Account Details"
+    params: {
+        accountId: string required
+    }
+    
+    layout: {
+        type: stack
+        components: [
+            {
+                type: header
+                title: "{{account.accountNumber}}"
+                subtitle: "{{account.accountType}}"
+            },
+            {
+                type: balanceCard
+                data: account.balance
+                properties: {
+                    showCurrency: true,
+                    showChange: true
+                }
+            },
+            {
+                type: tabs
+                items: [
+                    {
+                        title: "Transactions"
+                        components: [
+                            {
+                                type: list
+                                data: transactions
+                                properties: {
+                                    itemType: "transaction",
+                                    showDate: true,
+                                    showAmount: true,
+                                    showType: true
+                                }
+                                actions: {
+                                    onTap: {
+                                        navigate: TransactionDetail
+                                        params: {
+                                            transactionId: "item.id"
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        title: "Statistics"
+                        components: [
+                            {
+                                type: chart
+                                chartType: "bar"
+                                data: monthlyTransactions
+                                properties: {
+                                    title: "Monthly Activity",
+                                    showLegend: true
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+}
+
+// API definition
+api {
+    baseUrl: "https://api.bankingapp.example.com/v1"
+    
+    endpoint login {
+        path: "/auth/login"
+        method: POST
+        params: {
+            username: string required
+            password: string required
+        }
+        response: {
+            user: User
+            token: string
+        }
+    }
+    
+    endpoint getAccounts {
+        path: "/accounts"
+        method: GET
+        response: {
+            accounts: BankAccount[]
+        }
+    }
+    
+    endpoint getTransactions {
+        path: "/accounts/{accountId}/transactions"
+        method: GET
+        params: {
+            accountId: string required
+            startDate: date
+            endDate: date
+            limit: number
+            offset: number
+        }
+        response: {
+            transactions: Transaction[]
+            total: number
+        }
+    }
+    
+    endpoint transferMoney {
+        path: "/transactions/transfer"
+        method: POST
+        params: {
+            fromAccountId: string required
+            toAccountId: string required
+            amount: decimal required
+            description: string
+        }
+        response: {
+            transaction: Transaction
+            success: boolean
+        }
+    }
+    
+    endpoint getAccountById {
+        path: "/accounts/{accountId}"
+        method: GET
+        params: {
+            accountId: string required
+        }
+        response: {
+            account: BankAccount
+        }
+    }
+}
+
+// Navigation setup
+navigation: {
+    type: tab
+    items: [
+        {
+            title: "Dashboard"
+            icon: "home"
+            screen: Dashboard
+        },
+        {
+            title: "Accounts"
+            icon: "account_balance"
+            screen: AccountList
+        },
+        {
+            title: "Transfers"
+            icon: "compare_arrows"
+            screen: SendMoney
+        },
+        {
+            title: "Profile"
+            icon: "person"
+            screen: UserProfile
+        }
+    ]
+} 

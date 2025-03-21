@@ -1,0 +1,312 @@
+// src/language/finance-app-dsl-validator.ts
+
+import { ValidationAcceptor, ValidationChecks } from 'langium';
+import { FinanceAppDSLAstType, App, Model, Screen, Navigation, API, ModelPropertyFeature, EnumValuesFeature, PropertyFeature } from './generated/ast';
+import type { FinanceAppDSLServices } from './finance-app-dsl-module';
+
+/**
+ * Register custom validation checks.
+ */
+export function registerValidationChecks(services: FinanceAppDSLServices) {
+    const registry = services.validation.ValidationRegistry;
+    const validator = services.validation.FinanceAppDSLValidator;
+    const checks: ValidationChecks<FinanceAppDSLAstType> = {
+        App: validator.checkApp,
+        Model: validator.checkModel,
+        Screen: validator.checkScreen,
+        Navigation: validator.checkNavigation,
+        API: validator.checkAPI
+    };
+    registry.register(checks, validator);
+}
+
+/**
+ * Implementation of custom validations.
+ */
+export class FinanceAppDSLValidator {
+    
+    /**
+     * Validate the App node
+     */
+    checkApp(app: App, accept: ValidationAcceptor): void {
+        // Check that at least one platform is defined
+        if (!app.platforms || app.platforms.length === 0) {
+            accept('warning', 'No platforms defined. At least one platform should be specified.', { node: app, property: 'platforms' });
+        }
+        
+        // Check that there's at least one model
+        if (!app.models || app.models.length === 0) {
+            accept('warning', 'No models defined. At least one model should be defined.', { node: app, property: 'models' });
+        }
+        
+        // Check that there's at least one screen
+        if (!app.screens || app.screens.length === 0) {
+            accept('warning', 'No screens defined. At least one screen should be defined.', { node: app, property: 'screens' });
+        }
+        
+        // Check that there's exactly one initial screen
+        const initialScreens = app.screens.filter(screen => screen.isInitial);
+        if (initialScreens.length === 0) {
+            accept('error', 'No initial screen defined. Exactly one screen must be marked as initial.', { node: app, property: 'screens' });
+        } else if (initialScreens.length > 1) {
+            accept('error', 'Multiple initial screens defined. Exactly one screen must be marked as initial.', { node: app, property: 'screens' });
+            // Mark each initial screen as problematic
+            initialScreens.forEach(screen => {
+                accept('error', 'This screen is marked as initial, but another screen is also marked as initial.', { node: screen, property: 'isInitial' });
+            });
+        }
+    }
+    
+    /**
+     * Validate the Model node
+     */
+    checkModel(model: Model, accept: ValidationAcceptor): void {
+        // Check that model has at least one property
+        if (!model.properties || model.properties.length === 0) {
+            accept('error', 'Model must have at least one property.', { node: model });
+        }
+        
+        // Check that model name starts with uppercase letter (PascalCase)
+        if (model.name && model.name.charAt(0) !== model.name.charAt(0).toUpperCase()) {
+            accept('warning', 'Model names should use PascalCase (start with uppercase letter).', { node: model, property: 'name' });
+        }
+        
+        // Check for id property
+        const hasIdProperty = model.properties.some(prop => prop.name === 'id');
+        if (!hasIdProperty) {
+            accept('warning', 'Model should have an "id" property.', { node: model });
+        }
+        
+        // Check enum values on properties
+        model.properties.forEach(property => {
+            // Find enum values feature if it exists
+            const enumFeature = property.features?.find(feature => 
+                feature.$type === 'EnumValuesFeature'
+            ) as EnumValuesFeature | undefined;
+            
+            if (enumFeature) {
+                // Check that property type is string if enum values are provided
+                if (property.type.name !== 'string') {
+                    accept('error', 'Enum values can only be used with string properties.', { node: property, property: 'type' });
+                }
+                
+                // Check for duplicate enum values
+                const values = enumFeature.values;
+                const uniqueValues = new Set<string>();
+                values.forEach(value => {
+                    const valueStr = value.value;
+                    if (uniqueValues.has(valueStr)) {
+                        accept('error', `Duplicate enum value: "${valueStr}".`, { node: value });
+                    }
+                    uniqueValues.add(valueStr);
+                });
+            }
+            
+            // Check that required is not used with default value
+            const hasRequired = property.features?.some(feature => feature.$type === 'RequiredFeature');
+            const hasDefault = property.features?.some(feature => feature.$type === 'DefaultValueFeature');
+            
+            if (hasRequired && hasDefault) {
+                accept('warning', 'Properties with default values do not need to be marked as required.', { node: property });
+            }
+        });
+    }
+    
+    /**
+     * Validate the Screen node
+     */
+    checkScreen(screen: Screen, accept: ValidationAcceptor): void {
+        // Check that screen name starts with uppercase letter (PascalCase)
+        if (screen.name && screen.name.charAt(0) !== screen.name.charAt(0).toUpperCase()) {
+            accept('warning', 'Screen names should use PascalCase (start with uppercase letter).', { node: screen, property: 'name' });
+        }
+        
+        // Check that layout is defined
+        if (!screen.layout) {
+            accept('error', 'Screen must have a layout defined.', { node: screen });
+        }
+        
+        // Check layout type-specific requirements
+        if (screen.layout) {
+            switch (screen.layout.type.type) {
+                case 'form':
+                    // Forms should have fields
+                    if (!screen.layout.fields || screen.layout.fields.fields.length === 0) {
+                        accept('error', 'Form layout must have at least one field.', { node: screen.layout, property: 'fields' });
+                    }
+                    
+                    // Forms should have submit button
+                    if (!screen.layout.submitButton) {
+                        accept('warning', 'Form layout should have a submit button.', { node: screen.layout });
+                    }
+                    
+                    // Form should have actions
+                    if (!screen.layout.actions) {
+                        accept('warning', 'Form layout should have actions defined for form submission.', { node: screen.layout });
+                    }
+                    break;
+                
+                case 'stack':
+                case 'scroll':
+                    // Stack and scroll layouts should have components
+                    if (!screen.layout.components || screen.layout.components.items.length === 0) {
+                        accept('error', `${screen.layout.type.type} layout must have at least one component.`, { node: screen.layout, property: 'components' });
+                    }
+                    break;
+                
+                case 'tabs':
+                    // Tabs layout should have components with items
+                    const hasTabItems = screen.layout.components?.items.some(component => 
+                        component.type.type === 'tabs' && component.properties.some(prop => 
+                            prop.$type === 'ItemsProperty' && prop.items.length > 0
+                        )
+                    );
+                    
+                    if (!hasTabItems) {
+                        accept('error', 'Tabs layout must have a tabs component with at least one tab item.', { node: screen.layout });
+                    }
+                    break;
+            }
+        }
+        
+        // Check for navigation actions
+        this.validateScreenNavigation(screen, accept);
+    }
+    
+    /**
+     * Validate navigation actions within a screen
+     */
+    private validateScreenNavigation(screen: Screen, accept: ValidationAcceptor): void {
+        // Helper function to recursively check components for navigation actions
+        const checkComponentForNavigation = (component: any) => {
+            // Check if component has actions
+            if (component.actions) {
+                component.actions.actions.forEach((action: any) => {
+                    if (action.navigationAction) {
+                        // Check if target screen exists
+                        const targetScreen = action.navigationAction.target;
+                        
+                        // We'll validate target screens in the navigation check
+                        // as that requires access to all screens
+                    }
+                });
+            }
+            
+            // Check for nested components
+            if (component.items) {
+                component.items.forEach(checkComponentForNavigation);
+            }
+            
+            // Check components in properties
+            if (component.properties) {
+                component.properties.forEach((property: any) => {
+                    if (property.$type === 'ItemsProperty') {
+                        property.items.forEach(checkComponentForNavigation);
+                    }
+                });
+            }
+        };
+        
+        // Check components for navigation actions
+        if (screen.layout.components) {
+            screen.layout.components.items.forEach(checkComponentForNavigation);
+        }
+        
+        // Check form actions
+        if (screen.layout.actions) {
+            screen.layout.actions.actions.forEach((action: any) => {
+                if (action.navigationAction) {
+                    // Validate in navigation check
+                }
+            });
+        }
+    }
+    
+    /**
+     * Validate the Navigation node
+     */
+    checkNavigation(navigation: Navigation, accept: ValidationAcceptor): void {
+        // Check that there's at least one navigation item
+        if (!navigation.items || navigation.items.length === 0) {
+            accept('error', 'Navigation must have at least one item.', { node: navigation, property: 'items' });
+        }
+        
+        // Check for duplicate screen references
+        const screenRefs = new Map<string, any>();
+        navigation.items.forEach(item => {
+            const screenName = item.screen.ref?.name;
+            if (screenName && screenRefs.has(screenName)) {
+                accept('warning', `Screen "${screenName}" is referenced multiple times in navigation.`, { node: item, property: 'screen' });
+            }
+            screenRefs.set(screenName, item);
+        });
+        
+        // Check that navigation type is appropriate for the number of items
+        if (navigation.type.type === 'tab' && navigation.items.length > 5) {
+            accept('warning', 'Tab navigation typically should not have more than 5 items.', { node: navigation, property: 'type' });
+        }
+    }
+    
+    /**
+     * Validate the API node
+     */
+    checkAPI(api: API, accept: ValidationAcceptor): void {
+        // Check that there's at least one endpoint
+        if (!api.endpoints || api.endpoints.length === 0) {
+            accept('warning', 'API should have at least one endpoint.', { node: api, property: 'endpoints' });
+        }
+        
+        // Check for duplicate endpoint IDs
+        const endpointIds = new Map<string, any>();
+        api.endpoints.forEach(endpoint => {
+            if (endpointIds.has(endpoint.id)) {
+                accept('error', `Duplicate endpoint ID: "${endpoint.id}".`, { node: endpoint, property: 'id' });
+            }
+            endpointIds.set(endpoint.id, endpoint);
+        });
+        
+        // Check that paths match method conventions
+        api.endpoints.forEach(endpoint => {
+            // POST should not have path parameters typically
+            if (endpoint.method.method === 'POST' && endpoint.path.includes('{')) {
+                accept('warning', 'POST endpoints typically should not have path parameters. Consider using query parameters or request body.', { node: endpoint, property: 'path' });
+            }
+            
+            // PUT should have ID in path
+            if (endpoint.method.method === 'PUT' && !endpoint.path.includes('{')) {
+                accept('warning', 'PUT endpoints typically should include a resource ID in the path.', { node: endpoint, property: 'path' });
+            }
+            
+            // DELETE should have ID in path
+            if (endpoint.method.method === 'DELETE' && !endpoint.path.includes('{')) {
+                accept('warning', 'DELETE endpoints typically should include a resource ID in the path.', { node: endpoint, property: 'path' });
+            }
+            
+            // Check that path parameters are defined
+            if (endpoint.path.includes('{')) {
+                const paramMatches = endpoint.path.match(/\{([^}]+)\}/g);
+                if (paramMatches) {
+                    const pathParams = paramMatches.map(match => match.substring(1, match.length - 1));
+                    
+                    // Check if all path parameters are defined in params
+                    const definedParams = endpoint.params?.parameters.map(param => param.name) || [];
+                    pathParams.forEach(pathParam => {
+                        if (!definedParams.includes(pathParam)) {
+                            accept('error', `Path parameter "${pathParam}" is not defined in the endpoint parameters.`, { node: endpoint, property: 'path' });
+                        }
+                    });
+                }
+            }
+            
+            // POST, PUT should have a body
+            if ((endpoint.method.method === 'POST' || endpoint.method.method === 'PUT') && !endpoint.body) {
+                accept('warning', `${endpoint.method.method} endpoints typically should have a request body defined.`, { node: endpoint });
+            }
+            
+            // GET, DELETE should not have a body
+            if ((endpoint.method.method === 'GET' || endpoint.method.method === 'DELETE') && endpoint.body) {
+                accept('warning', `${endpoint.method.method} endpoints typically should not have a request body.`, { node: endpoint, property: 'body' });
+            }
+        });
+    }
+}

@@ -1,0 +1,57 @@
+app MyApp {
+    name: "My App"
+    id: "com.example.myapp"
+    version: "1.0"
+    platforms: [ios, android]
+}
+
+model User {
+    id: string required
+    name: string required
+}
+
+screen Home {
+    title: "Home"
+    initial
+    layout: {
+        type: stack
+        components: [
+            {
+                type: header
+                title: "Welcome"
+            }
+        ]
+    }
+}
+
+navigation: {
+    type: tab
+    items: [
+        {
+            title: "Home"
+            icon: "home"
+            screen: Home
+        }
+    ]
+}
+
+api: {
+    baseUrl: "https://api.example.com"
+    endpoints: [
+        {
+            id: getUsers
+            path: "/users"
+            method: GET
+            response: User[]
+        }
+    ]
+}
+
+mockData: {
+    User: [
+        {
+            id: "1"
+            name: "John Doe"
+        }
+    ]
+} 

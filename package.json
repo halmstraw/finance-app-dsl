@@ -1,0 +1,48 @@
+{
+    "name": "finance-app-dsl",
+    "description": "Finance App DSL for creating financial applications",
+    "version": "0.0.1",
+    "author": "Your name",
+    "license": "MIT",
+    "files": [
+        "bin",
+        "out",
+        "src"
+    ],
+    "type": "module",
+    "bin": {
+        "finance-app": "./bin/cli.js"
+    },
+    "scripts": {
+        "build": "tsc -b tsconfig.json",
+        "clean": "rimraf out",
+        "watch": "tsc -b tsconfig.json --watch",
+        "test": "echo \"Error: no test specified\" && exit 1",
+        "lint": "eslint src --ext ts",
+        "langium:generate": "langium generate",
+        "langium:generate:production": "langium generate --mode=production",
+        "langium:watch": "langium generate --watch",
+        "vscode:prepublish": "npm run build && npm run lint",
+        "build:cli": "npm run build && node ./bin/build-cli.js",
+        "package": "esbuild --bundle --outdir=out/packages --format=esm --platform=node ./out/cli/main.js"
+    },
+    "dependencies": {
+        "chalk": "^5.4.1",
+        "commander": "^13.1.0",
+        "langium": "~3.4.0"
+    },
+    "devDependencies": {
+        "@types/node": "^18.0.0",
+        "@typescript-eslint/eslint-plugin": "~7.3.1",
+        "@typescript-eslint/parser": "~7.3.1",
+        "esbuild": "^0.25.1",
+        "eslint": "~8.57.0",
+        "langium-cli": "~3.4.0",
+        "rimraf": "^6.0.1",
+        "typescript": "~5.1.6"
+    },
+    "volta": {
+        "node": "18.19.1",
+        "npm": "10.2.4"
+    }
+}

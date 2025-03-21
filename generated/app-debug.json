@@ -1,0 +1,151 @@
+{
+  "$type": "App",
+  "name": "MyApp",
+  "displayName": "My App",
+  "appId": "com.example.myapp",
+  "version": "1.0",
+  "platforms": [
+    {
+      "$type": "Platform",
+      "name": "ios"
+    },
+    {
+      "$type": "Platform",
+      "name": "android"
+    }
+  ],
+  "models": [
+    {
+      "$type": "Model",
+      "name": "User",
+      "properties": []
+    }
+  ],
+  "screens": [
+    {
+      "$type": "Screen",
+      "name": "Home",
+      "title": "Home",
+      "isInitial": true,
+      "layout": {
+        "$type": "Layout",
+        "type": {
+          "$type": "LayoutType",
+          "type": "stack"
+        },
+        "components": {
+          "$type": "ComponentList",
+          "items": [
+            {
+              "$type": "Component",
+              "type": {
+                "$type": "ComponentType",
+                "type": "header"
+              },
+              "properties": []
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "navigation": {
+    "$type": "Navigation",
+    "type": {
+      "$type": "NavigationType",
+      "type": "tab"
+    },
+    "items": [
+      {
+        "$type": "NavItem",
+        "title": "Home",
+        "icon": {
+          "$type": "IconProperty",
+          "icon": "home"
+        },
+        "screen": {
+          "ref": "[Circular]",
+          "_ref": "[Circular]",
+          "_nodeDescription": {
+            "node": "[Circular]",
+            "name": "Home",
+            "nameSegment": {
+              "range": {
+                "start": {
+                  "character": 184,
+                  "line": 0
+                },
+                "end": {
+                  "character": 188,
+                  "line": 0
+                }
+              },
+              "offset": 184,
+              "end": 188,
+              "length": 4
+            },
+            "selectionSegment": {
+              "range": {
+                "start": {
+                  "character": 177,
+                  "line": 0
+                },
+                "end": {
+                  "character": 384,
+                  "line": 0
+                }
+              },
+              "offset": 177,
+              "end": 384,
+              "length": 207
+            },
+            "type": "Screen",
+            "documentUri": {
+              "fsPath": "/Users/timhalmshaw/dev/AI/finance-app-dsl/langium/finance-app-dsl/examples/basic.finapp",
+              "external": "file:///Users/timhalmshaw/dev/AI/finance-app-dsl/langium/finance-app-dsl/examples/basic.finapp",
+              "path": "/Users/timhalmshaw/dev/AI/finance-app-dsl/langium/finance-app-dsl/examples/basic.finapp",
+              "scheme": "file"
+            },
+            "path": "/screens@0"
+          }
+        }
+      }
+    ]
+  },
+  "api": {
+    "$type": "API",
+    "baseUrl": "https://api.example.com",
+    "endpoints": [
+      {
+        "$type": "Endpoint",
+        "id": "getUsers",
+        "path": "/users",
+        "method": {
+          "$type": "HTTPMethod",
+          "method": "GET"
+        },
+        "response": {
+          "$type": "ResponseTypeRef",
+          "type": "User",
+          "isArray": true
+        }
+      }
+    ],
+    "isMock": false
+  },
+  "mockData": {
+    "$type": "MockData",
+    "sections": [
+      {
+        "$type": "MockDataSection",
+        "name": "User",
+        "items": [
+          {
+            "$type": "MockDataItem",
+            "properties": []
+          }
+        ]
+      }
+    ]
+  }
+}

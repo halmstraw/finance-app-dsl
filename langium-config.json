@@ -1,0 +1,12 @@
+{
+    "projectName": "FinanceAppDsl",
+    "languages": [{
+        "id": "finance-app-dsl",
+        "grammar": "src/language/finance-app-dsl.langium",
+        "fileExtensions": [".finapp"],
+        "textMate": {
+            "out": "syntaxes/finance-app-dsl.tmLanguage.json"
+        }
+    }],
+    "out": "src/language/generated"
+}

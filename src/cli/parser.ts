@@ -1,11 +1,44 @@
 /**
  * Improved parser for the Finance App DSL
  */
-import { App } from '../language/generated/ast.js';
+import { App as AstApp } from '../language/generated/ast.js';
 import { NodeFileSystem } from 'langium/node';
 import { URI } from 'langium';
 import path from 'node:path';
 import { createFinanceAppDslServices } from '../language/finance-app-dsl-module.js';
+
+// Export our own App type that includes our models, screens and API
+export interface App {
+  name: string;
+  models: Model[];
+  screens: Screen[];
+  api?: API;
+}
+
+export interface Property {
+  name: string;
+  type: string;
+}
+
+export interface Model {
+  name: string;
+  properties: Property[];
+}
+
+export interface Screen {
+  name: string;
+  isInitial: boolean;
+  title: string;
+}
+
+export interface API {
+  baseUrl: string;
+  endpoints: Array<{
+    name: string;
+    path: string;
+    method: string;
+  }>;
+}
 
 /**
  * Find all matches of a pattern in source text
@@ -32,141 +65,86 @@ function findMatchesInSource(sourceText: string, pattern: RegExp): Array<{start:
     return matches;
 }
 
-/**
- * Process a file directly and extract models and screens
- */
 export async function processFinAppFile(filePath: string): Promise<{
     app: App,
-    models: any[],
-    screens: any[],
-    api?: any
+    models: Model[],
+    screens: Screen[],
+    api?: API
 }> {
     // Create Langium services
-    const services = createFinanceAppDslServices(NodeFileSystem).FinanceAppDsl;
+    const services = createFinanceAppDslServices(NodeFileSystem);
     
-    // Parse the document
-    const absolutePath = path.resolve(filePath);
-    const uri = URI.file(absolutePath);
-    const document = await services.shared.workspace.LangiumDocuments.getOrCreateDocument(uri);
+    // Read the file
+    const fileUri = URI.file(path.resolve(filePath));
+    const document = await services.shared.workspace.LangiumDocuments.getOrCreateDocument(fileUri);
     
     // Build the document
     await services.shared.workspace.DocumentBuilder.build([document]);
     
-    // Extract the App node
-    if (!document.parseResult?.value) {
-        throw new Error('Could not parse document');
+    // Get the AST
+    const ast = document.parseResult?.value as AstApp;
+    
+    if (!ast) {
+        throw new Error('Failed to parse the document');
     }
     
-    const app = document.parseResult.value as App;
-    
-    // Debug the document
-    console.log('App name from AST:', app.name);
-    
-    // Save the AST for debugging
-    const fs = await import('node:fs');
-    fs.writeFileSync(
-        path.resolve('generated/app-debug.json'), 
-        JSON.stringify(document.parseResult.value, (key, value) => 
-            key.startsWith('$') && key !== '$type' ? undefined : value, 
-        2)
-    );
-    console.log('App structure dumped to generated/app-debug.json');
-    
-    // Parse using direct text parsing
+    // Extract models, screens, and API using direct parsing
     const sourceText = document.textDocument.getText();
-    const directModels = parseDirectModels(sourceText);
-    const directScreens = parseDirectScreens(sourceText);
-    const directApi = parseDirectApi(sourceText);
+    const models = parseDirectModels(sourceText);
+    const screens = parseDirectScreens(sourceText);
+    const api = parseDirectApi(sourceText);
     
-    console.log(`Extracted ${directModels.length} models and ${directScreens.length} screens from direct parsing`);
-    if (directApi) {
-        console.log('API configuration extracted successfully');
-    }
+    // Create our own app object
+    const app: App = {
+        name: ast.name,
+        models,
+        screens,
+        api
+    };
     
-    // Store document for use in generation
-    const appWithDocument = app as any;
-    appWithDocument.$document = document;
-    
-    // Add the parsed API to the app
-    if (directApi) {
-        appWithDocument.api = directApi;
-    }
-    
-    // Return the data with directly parsed models and screens
-    return { 
-        app: appWithDocument as App,
-        models: directModels, 
-        screens: directScreens,
-        api: directApi
+    return {
+        app,
+        models,
+        screens,
+        api
     };
 }
 
 /**
  * Parse models directly from source text
  */
-function parseDirectModels(sourceText: string): any[] {
+function parseDirectModels(sourceText: string): Model[] {
     const modelMatches = findMatchesInSource(sourceText, /model\s+(\w+)\s*{([^}]*)}/g);
-    const models: any[] = [];
+    const models: Model[] = [];
     
     for (const match of modelMatches) {
-        // Extract model name from the full match using regex
-        const nameMatch = /model\s+(\w+)\s*{/.exec(match.text);
-        if (!nameMatch) continue;
+        const name = match.text.match(/model\s+(\w+)/)?.[1];
+        if (!name) continue;
         
-        const name = nameMatch[1];
-        console.log(`Creating model: ${name}`);
+        const propertiesText = match.text.match(/{([^}]*)}/)?.[1];
+        if (!propertiesText) continue;
         
-        // Create a model object with required properties
-        const model = {
-            $type: 'Model',
-            name: name,
-            properties: [] as any[]
-        };
-        
-        // Add properties
-        const propertiesText = match.text.substring(match.text.indexOf('{') + 1, match.text.lastIndexOf('}'));
-        
-        // Parse properties
-        const propertyLines = propertiesText.split('\n')
+        const propertyLines = propertiesText
+            .split('\n')
             .map(line => line.trim())
             .filter(line => line.length > 0 && !line.startsWith('//'));
         
-        const properties: any[] = [];
+        const properties: Property[] = [];
         
         for (const line of propertyLines) {
-            // Improved property parsing with regex to better capture attributes
-            const propMatch = /(\w+)\s*:\s*(\w+)(.*)/.exec(line);
-            if (!propMatch) continue;
-            
-            const propName = propMatch[1];
-            const propType = propMatch[2];
-            const attributes = propMatch[3].trim();
-            
-            // Extract enum values if present
-            const enumMatch = /enum\s*:\s*\[(.*?)\]/.exec(attributes);
-            const enumValues = enumMatch ? 
-                enumMatch[1].split(',').map(v => v.trim().replace(/'/g, '').replace(/"/g, '')) : 
-                [];
-            
-            // Extract default value if present
-            const defaultMatch = /default\s*:\s*([^,\s]+)/.exec(attributes);
-            const defaultValue = defaultMatch ? defaultMatch[1] : undefined;
+            const [propName, propType] = line.split(':').map(s => s.trim());
+            if (!propName || !propType) continue;
             
             properties.push({
-                $type: 'Property',
                 name: propName,
-                type: propType,
-                isRequired: attributes.includes('required'),
-                attributes: attributes,
-                enumValues: enumValues.length > 0 ? enumValues : undefined,
-                defaultValue: defaultValue
+                type: propType
             });
         }
         
-        // Set properties
-        model.properties = properties;
-        
-        models.push(model);
+        models.push({
+            name,
+            properties
+        });
     }
     
     return models;
@@ -175,33 +153,22 @@ function parseDirectModels(sourceText: string): any[] {
 /**
  * Parse screens directly from source text
  */
-function parseDirectScreens(sourceText: string): any[] {
+function parseDirectScreens(sourceText: string): Screen[] {
     const screenMatches = findMatchesInSource(sourceText, /screen\s+(\w+)\s*{([^]*?)}/g);
-    const screens: any[] = [];
+    const screens: Screen[] = [];
     
     for (const match of screenMatches) {
-        // Extract screen name from the full match using regex
-        const nameMatch = /screen\s+(\w+)\s*{/.exec(match.text);
-        if (!nameMatch) continue;
+        const name = match.text.match(/screen\s+(\w+)/)?.[1];
+        if (!name) continue;
         
-        const name = nameMatch[1];
-        console.log(`Creating screen: ${name}`);
+        const isInitial = match.text.includes('initial');
+        const title = match.text.match(/title\s*:\s*"([^"]+)"/)?.[1] || name;
         
-        // Create a screen object with required properties
-        const screen = {
-            $type: 'Screen',
-            name: name,
-            isInitial: false,
-            title: name,
-            layout: {
-                $type: 'Layout',
-                type: 'stack',
-                components: []
-            }
-        };
-        
-        // Add to screens array
-        screens.push(screen);
+        screens.push({
+            name,
+            isInitial,
+            title
+        });
     }
     
     return screens;
@@ -210,41 +177,25 @@ function parseDirectScreens(sourceText: string): any[] {
 /**
  * Parse API configuration directly from source text
  */
-function parseDirectApi(sourceText: string): any | undefined {
+function parseDirectApi(sourceText: string): API | undefined {
     // First, let's use a simple search to find the API section and base URL
     const apiSection = sourceText.match(/api\s*{[\s\S]*?baseUrl\s*:\s*"([^"]+)"[\s\S]*?}/);
+    if (!apiSection) return undefined;
     
-    if (!apiSection || !apiSection[1]) {
-        console.log('Could not extract API section or baseUrl');
-        return undefined;
-    }
-    
-    // Get the baseUrl directly from the regex match
     const baseUrl = apiSection[1];
-    console.log('API Base URL:', baseUrl);
     
-    // Find all endpoints using regex
-    const endpointMatches = [];
-    const endpointRegex = /endpoint\s+(\w+)\s*{[\s\S]*?path\s*:\s*"([^"]+)"[\s\S]*?method\s*:\s*(\w+)/g;
-    
-    let match;
-    while ((match = endpointRegex.exec(sourceText)) !== null) {
-        const endpointName = match[1];
-        const path = match[2];
-        const method = match[3];
+    // Now let's find all endpoints
+    const endpointMatches = findMatchesInSource(sourceText, /endpoint\s+(\w+)\s*{([^}]*)}/g);
+    const endpoints = endpointMatches.map(match => {
+        const name = match.text.match(/endpoint\s+(\w+)/)?.[1] || '';
+        const path = match.text.match(/path\s*:\s*"([^"]+)"/)?.[1] || '';
+        const method = match.text.match(/method\s*:\s*(\w+)/)?.[1] || 'GET';
         
-        console.log(`Endpoint: ${endpointName}, Path: ${path}, Method: ${method}`);
-        
-        endpointMatches.push({
-            id: endpointName,
-            path,
-            method
-        });
-    }
+        return { name, path, method };
+    });
     
-    // Return the API object
     return {
         baseUrl,
-        endpoints: endpointMatches
+        endpoints
     };
 } 

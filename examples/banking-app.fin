@@ -1,0 +1,65 @@
+app BankingApp {
+  // This is a simple banking app DSL example
+
+  // Models
+  model Account {
+    id: string
+    name: string
+    balance: number
+    accountType: string
+    isActive: boolean
+    createdDate: date
+  }
+
+  model Transaction {
+    id: string
+    accountId: string
+    amount: number
+    type: string
+    description: string
+    date: date
+  }
+
+  // Screens
+  screen LoginScreen {
+    initial
+    title: "Login to Banking App"
+  }
+
+  screen DashboardScreen {
+    title: "Dashboard"
+  }
+
+  screen AccountDetailScreen {
+    title: "Account Details"
+  }
+
+  screen TransactionsScreen {
+    title: "Transactions"
+  }
+
+  // API definitions
+  api {
+    baseUrl: "https://api.bankingapp.example.com"
+
+    endpoint getAccounts {
+      path: "/accounts"
+      method: GET
+    }
+
+    endpoint getAccountDetails {
+      path: "/accounts/{id}"
+      method: GET
+    }
+
+    endpoint createTransaction {
+      path: "/transactions"
+      method: POST
+    }
+
+    endpoint getTransactions {
+      path: "/accounts/{accountId}/transactions"
+      method: GET
+    }
+  }
+} 

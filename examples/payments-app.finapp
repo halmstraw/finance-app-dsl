@@ -1,0 +1,666 @@
+// payments-app.finapp - Functional Programming based Payment App DSL using SICP principles
+
+app PaymentsApp {
+    name: "Functional Payments"
+    id: "com.example.functionalpayments"
+    version: "1.0.0"
+    platforms: [ios, android, web]
+    theme: {
+        primaryColor: "#6200EE"
+        secondaryColor: "#03DAC6"
+        backgroundColor: "#FAFAFA"
+        textColor: "#121212"
+        errorColor: "#B00020"
+    }
+}
+
+// Pure Data Models
+model Account {
+    id: string required
+    name: string required
+    balance: decimal required
+    type: string required enum: [current, savings, credit]
+    currency: string required
+    accountNumber: string required
+    sortCode: string optional // Used in some markets
+    iban: string optional // Used in some markets
+}
+
+model Transfer {
+    id: string required
+    fromAccountId: string required
+    toAccountId: string optional
+    toAccountNumber: string optional
+    toSortCode: string optional
+    toIban: string optional
+    amount: decimal required
+    reference: string required
+    date: date required
+    status: string required enum: [pending, completed, failed]
+    error: string optional
+}
+
+model PromotionalBanner {
+    id: string required
+    title: string required
+    description: string required
+    startDate: date required
+    endDate: date required
+    imageUrl: string required
+    actionText: string required
+    actionLink: string required
+}
+
+// Define user journey with functional constructs
+define-journey PaymentJourney(user-params) {
+    with-context(system, user) {
+        // Define higher-order predicates
+        define isInDateRange(date, item) {
+            return date >= item.startDate && date <= item.endDate;
+        }
+        
+        define isValidAccountNumber(accountNumber, country) {
+            return match country {
+                case "UK" => /^[0-9]{8}$/.test(accountNumber)
+                case "US" => /^[0-9]{10,12}$/.test(accountNumber)
+                case "EU" => /^[A-Z0-9]{15,34}$/.test(accountNumber)
+                default => /^[0-9]{8}$/.test(accountNumber)
+            }
+        }
+        
+        // Higher-order functions
+        define filter(predicate, array) {
+            return array.filter(item => predicate(item));
+        }
+        
+        define find(predicate, array) {
+            return array.find(predicate) || null;
+        }
+        
+        define map(transformer, array) {
+            return array.map(item => transformer(item));
+        }
+        
+        define reduce(combiner, initialValue, array) {
+            return array.reduce((acc, item) => combiner(acc, item), initialValue);
+        }
+        
+        define pipe(...functions) {
+            return (initialValue) => {
+                return reduce((value, fn) => fn(value), initialValue, functions);
+            }
+        }
+        
+        // Pure business functions
+        define getCurrentBanner(currentDate, banners) {
+            return pipe(
+                banners => filter(banner => isInDateRange(currentDate, banner), banners),
+                filteredBanners => filteredBanners[0] || null
+            )(banners);
+        }
+        
+        define validateTransfer(transfer, accounts) {
+            define account = find(acc => acc.id === transfer.fromAccountId, accounts);
+            
+            return (
+                isValidAccountNumber(transfer.toAccountNumber, user.countryCode) &&
+                transfer.amount > 0 &&
+                transfer.amount <= (account ? account.balance : 0) &&
+                /^[A-Za-z0-9\s]{3,18}$/.test(transfer.reference)
+            );
+        }
+        
+        define formatCurrency(amount, currency) {
+            return new Intl.NumberFormat(undefined, { 
+                style: 'currency', 
+                currency: currency 
+            }).format(amount);
+        }
+        
+        define enhanceAccount(account) {
+            return {
+                ...account,
+                formattedBalance: formatCurrency(account.balance, account.currency),
+                status: account.balance > 0 ? "positive" : "negative"
+            };
+        }
+        
+        define prepareTransferDetails(transfer, accounts) {
+            define fromAccount = find(acc => acc.id === transfer.fromAccountId, accounts);
+            
+            return {
+                fromAccount: fromAccount || { name: "Unknown Account" },
+                toAccountNumber: transfer.toAccountNumber,
+                toSortCode: transfer.toSortCode,
+                amount: transfer.amount,
+                formattedAmount: formatCurrency(transfer.amount, user.currency),
+                reference: transfer.reference
+            };
+        }
+    }
+}
+
+// Functional Screen Definitions
+screen PaymentsOverview {
+    title: "Payments"
+    initial
+    
+    dataFunctions: [
+        {
+            name: "banner"
+            expression: "getCurrentBanner(system.currentDate, promotionalBanners)"
+        },
+        {
+            name: "enhancedAccounts"
+            expression: "map(enhanceAccount, accounts)"
+        },
+        {
+            name: "totalBalance"
+            expression: "reduce((sum, account) => sum + account.balance, 0, accounts)"
+        },
+        {
+            name: "formattedTotalBalance"
+            expression: "formatCurrency(totalBalance, user.currency)"
+        }
+    ]
+    
+    layout: {
+        type: stack
+        components: [
+            {
+                type: conditionalComponent
+                condition: "{{banner != null}}"
+                component: {
+                    type: banner
+                    properties: {
+                        title: "{{banner.title}}",
+                        description: "{{banner.description}}",
+                        imageUrl: "{{banner.imageUrl}}",
+                        actionText: "{{banner.actionText}}"
+                    }
+                    actions: {
+                        onTap: {
+                            openUrl: "{{banner.actionLink}}"
+                        }
+                    }
+                }
+            },
+            {
+                type: header
+                title: "Your Accounts"
+                subtitle: "Total: {{formattedTotalBalance}}"
+            },
+            {
+                type: list
+                data: enhancedAccounts
+                properties: {
+                    itemType: "accountCard",
+                    showBalance: true
+                }
+                actions: {
+                    onTap: {
+                        navigate: AccountDetail
+                        params: {
+                            accountId: "item.id"
+                        }
+                    }
+                }
+            },
+            {
+                type: header
+                title: "Quick Actions"
+            },
+            {
+                type: grid
+                columns: 2
+                components: [
+                    {
+                        type: actionCard
+                        text: "Make Transfer"
+                        icon: "send"
+                        actions: {
+                            onTap: {
+                                navigate: TransferInput
+                            }
+                        }
+                    },
+                    {
+                        type: actionCard
+                        text: "Transfer History"
+                        icon: "history"
+                        actions: {
+                            onTap: {
+                                navigate: TransferHistory
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+    
+    error: {
+        type: fullPageError
+        title: "Connection Error"
+        message: "Unable to load your accounts. Please check your connection and try again."
+        actions: [
+            {
+                text: "Retry"
+                action: {
+                    reload
+                }
+            }
+        ]
+    }
+}
+
+screen TransferInput {
+    title: "Make a Transfer"
+    
+    dataFunctions: [
+        {
+            name: "accountOptions"
+            expression: "map(account => ({ 
+                label: account.name + ' (' + formatCurrency(account.balance, account.currency) + ')',
+                value: account.id,
+                disabled: account.balance <= 0
+            }), accounts)"
+        }
+    ]
+    
+    layout: {
+        type: form
+        submitButton: "Continue"
+        cancelButton: "Cancel"
+        actions: {
+            onSubmit: {
+                validationExpression: "validateTransfer(form, accounts)"
+                onSuccess: {
+                    navigate: TransferConfirm
+                    params: {
+                        transferData: "{{form}}"
+                    }
+                }
+            },
+            onCancel: {
+                navigate: PaymentsOverview
+            }
+        }
+        fields: [
+            {
+                type: select
+                name: fromAccount
+                label: "From Account"
+                required
+                options: {
+                    data: accountOptions
+                    labelField: "label"
+                    valueField: "value"
+                    disabledField: "disabled"
+                }
+            },
+            {
+                type: text
+                name: toAccountNumber
+                label: "To Account Number"
+                required
+                validationExpression: "isValidAccountNumber(value, user.countryCode)"
+                errorMessage: "Please enter a valid account number for {{user.countryCode}}"
+            },
+            {
+                type: text
+                name: toSortCode
+                label: "Sort Code"
+                validationExpression: "/^[0-9]{6}$/.test(value)"
+                required: "{{user.countryCode == 'UK'}}"
+                visible: "{{user.countryCode == 'UK'}}"
+                errorMessage: "Sort code must be 6 digits"
+            },
+            {
+                type: number
+                name: amount
+                label: "Amount"
+                required
+                validationExpression: "value > 0 && value <= (accounts.find(acc => acc.id === form.fromAccount)?.balance || 0)"
+                errorMessage: "Amount must be greater than 0 and less than your balance"
+                properties: {
+                    decimalPlaces: 2,
+                    currency: "{{user.currency}}"
+                }
+            },
+            {
+                type: text
+                name: reference
+                label: "Reference"
+                required
+                validationExpression: "/^[A-Za-z0-9\\s]{3,18}$/.test(value)"
+                errorMessage: "Reference must be 3-18 alphanumeric characters"
+                maxLength: 18
+            }
+        ]
+    }
+}
+
+screen TransferConfirm {
+    title: "Confirm Transfer"
+    params: {
+        transferData: object required
+    }
+    
+    dataFunctions: [
+        {
+            name: "details"
+            expression: "prepareTransferDetails(params.transferData, accounts)"
+        }
+    ]
+    
+    layout: {
+        type: stack
+        components: [
+            {
+                type: header
+                title: "Review Transfer Details"
+            },
+            {
+                type: card
+                components: [
+                    {
+                        type: fieldDisplay
+                        label: "From"
+                        value: "{{details.fromAccount.name}}"
+                    },
+                    {
+                        type: fieldDisplay
+                        label: "To Account Number"
+                        value: "{{details.toAccountNumber}}"
+                    },
+                    {
+                        type: conditionalComponent
+                        condition: "{{details.toSortCode != null}}"
+                        component: {
+                            type: fieldDisplay
+                            label: "Sort Code"
+                            value: "{{details.toSortCode}}"
+                        }
+                    },
+                    {
+                        type: fieldDisplay
+                        label: "Amount"
+                        value: "{{details.formattedAmount}}"
+                        properties: {
+                            highlight: true
+                        }
+                    },
+                    {
+                        type: fieldDisplay
+                        label: "Reference"
+                        value: "{{details.reference}}"
+                    }
+                ]
+            },
+            {
+                type: button
+                text: "Confirm and Send"
+                properties: {
+                    style: "primary",
+                    fullWidth: true
+                }
+                actions: {
+                    onTap: {
+                        api: createTransfer
+                        body: {
+                            fromAccountId: "{{params.transferData.fromAccount}}",
+                            toAccountNumber: "{{params.transferData.toAccountNumber}}",
+                            toSortCode: "{{params.transferData.toSortCode}}",
+                            amount: "{{params.transferData.amount}}",
+                            reference: "{{params.transferData.reference}}",
+                            date: "{{system.currentDate}}",
+                            status: "pending"
+                        }
+                        onSuccess: {
+                            navigate: TransferSuccess
+                            params: {
+                                transferId: "{{response.id}}",
+                                transferDetails: "{{details}}"
+                            }
+                        }
+                        onError: {
+                            showErrorAlert: {
+                                title: "Transfer Failed",
+                                message: "{{error.message}}",
+                                actions: [
+                                    {
+                                        text: "Try Again",
+                                        action: {
+                                            retry
+                                        }
+                                    },
+                                    {
+                                        text: "Go Back",
+                                        action: {
+                                            navigate: TransferInput
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                type: button
+                text: "Edit Details"
+                properties: {
+                    style: "secondary",
+                    fullWidth: true
+                }
+                actions: {
+                    onTap: {
+                        navigate: TransferInput
+                        params: {
+                            prefill: "{{params.transferData}}"
+                        }
+                    }
+                }
+            }
+        ]
+    }
+}
+
+screen TransferSuccess {
+    title: "Transfer Complete"
+    params: {
+        transferId: string required,
+        transferDetails: object required
+    }
+    
+    dataFunctions: [
+        {
+            name: "formattedDate"
+            expression: "new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(new Date())"
+        }
+    ]
+    
+    layout: {
+        type: stack
+        components: [
+            {
+                type: successIcon
+                properties: {
+                    size: "large",
+                    animation: true
+                }
+            },
+            {
+                type: header
+                title: "Transfer Successful!"
+                subtitle: "Your money is on its way"
+            },
+            {
+                type: card
+                components: [
+                    {
+                        type: fieldDisplay
+                        label: "Amount"
+                        value: "{{params.transferDetails.formattedAmount}}"
+                    },
+                    {
+                        type: fieldDisplay
+                        label: "Reference"
+                        value: "{{params.transferDetails.reference}}"
+                    },
+                    {
+                        type: fieldDisplay
+                        label: "Date"
+                        value: "{{formattedDate}}"
+                    }
+                ]
+            },
+            {
+                type: button
+                text: "Make Another Transfer"
+                properties: {
+                    style: "secondary"
+                }
+                actions: {
+                    onTap: {
+                        navigate: TransferInput
+                    }
+                }
+            },
+            {
+                type: button
+                text: "Return to Home"
+                properties: {
+                    style: "primary"
+                }
+                actions: {
+                    onTap: {
+                        navigate: PaymentsOverview
+                    }
+                }
+            }
+        ]
+    }
+}
+
+// App navigation
+navigation: {
+    type: stack
+    items: [
+        {
+            title: "Home"
+            screen: PaymentsOverview
+        }
+    ]
+}
+
+// API configuration
+api: {
+    baseUrl: "https://api.functionalpayments.example/v1"
+    mock
+    endpoints: [
+        {
+            id: getAccounts
+            path: "/accounts"
+            method: GET
+            response: Account[]
+        },
+        {
+            id: getTransfers
+            path: "/transfers"
+            method: GET
+            response: Transfer[]
+        },
+        {
+            id: getTransfer
+            path: "/transfers/{id}"
+            method: GET
+            params: [
+                {
+                    name: id
+                    type: string
+                    required
+                }
+            ]
+            response: Transfer
+        },
+        {
+            id: createTransfer
+            path: "/transfers"
+            method: POST
+            body: Transfer
+            response: Transfer
+        }
+    ]
+}
+
+// Mock data for development
+mockData: {
+    accounts: [
+        {
+            id: "acc1"
+            name: "Main Current Account"
+            balance: 1245.67
+            type: "current"
+            currency: "GBP"
+            accountNumber: "12345678"
+            sortCode: "123456"
+        },
+        {
+            id: "acc2"
+            name: "Savings Account"
+            balance: 5432.10
+            type: "savings"
+            currency: "GBP"
+            accountNumber: "87654321"
+            sortCode: "654321"
+        }
+    ],
+    
+    transfers: [
+        {
+            id: "t1"
+            fromAccountId: "acc1"
+            toAccountNumber: "11223344"
+            toSortCode: "112233"
+            amount: 50.00
+            reference: "Birthday Gift"
+            date: "2025-03-10"
+            status: "completed"
+        },
+        {
+            id: "t2"
+            fromAccountId: "acc1"
+            toAccountNumber: "99887766"
+            toSortCode: "998877"
+            amount: 125.50
+            reference: "Rent"
+            date: "2025-03-15"
+            status: "completed"
+        }
+    ],
+    
+    promotionalBanners: [
+        {
+            id: "promo1"
+            title: "Summer Savings"
+            description: "Transfer £100+ and get £5 cashback"
+            startDate: "2025-06-01"
+            endDate: "2025-08-31"
+            imageUrl: "https://example.com/images/summer-promo.jpg"
+            actionText: "Learn More"
+            actionLink: "https://example.com/promos/summer"
+        },
+        {
+            id: "promo2"
+            title: "Holiday Transfer Offer"
+            description: "No fees on international transfers until January"
+            startDate: "2025-12-01"
+            endDate: "2025-12-31"
+            imageUrl: "https://example.com/images/holiday-promo.jpg"
+            actionText: "Send Money"
+            actionLink: "https://example.com/promos/holiday"
+        }
+    ]
+} 
